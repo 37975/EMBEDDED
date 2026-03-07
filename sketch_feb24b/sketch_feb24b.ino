@@ -3,13 +3,12 @@
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
 
-// ─── Config ───────────────────────────────────────────────
+// config
 #define WIFI_SSID       "WIFI"
 #define WIFI_PASSWORD   "PASSWORD"
 #define FIREBASE_HOST   "embedded-cc90e-default-rtdb.asia-southeast1.firebasedatabase.app"
 #define FIREBASE_SECRET "wBhPfRAptoio9WFNrICysJCq4b99L96pOekdvWV3"
 
-// ── เปลี่ยนบรรทัดนี้ตาม ESP32 แต่ละตัว ──────────────────
 #define NODE_ID "indoor"   // "indoor" หรือ "outdoor"
 
 #define PATH_LATEST      "/sensors/" NODE_ID "/latest"
@@ -17,12 +16,10 @@
 #define PATH_CONTROL     "/control/" NODE_ID
 #define PATH_CALIBRATION "/calibration/" NODE_ID
 
-// ─── Firebase objects ─────────────────────────────────────
 FirebaseData   fbdo;
 FirebaseAuth   auth;
 FirebaseConfig config;
 
-// ─── Mock sensor state ────────────────────────────────────
 struct SensorValues {
   float pm25        = 35.0;
   float pm10        = 72.0;
@@ -32,14 +29,11 @@ struct SensorValues {
   float current     = 1.24;
 } sensor;
 
-// ─── Timers ───────────────────────────────────────────────
 unsigned long lastSend    = 0;
 unsigned long lastHistory = 0;
 unsigned long lastControl = 0;
 
-// ═══════════════════════════════════════════════════════════
-//  จำลองค่าเซ็นเซอร์ให้ค่อยๆ เปลี่ยน (random walk)
-// ═══════════════════════════════════════════════════════════
+
 void updateMockSensors() {
   sensor.pm25        += (random(-20, 20)) / 10.0;
   sensor.pm10        += (random(-30, 30)) / 10.0;
@@ -56,9 +50,6 @@ void updateMockSensors() {
   sensor.current     = constrain(sensor.current,     0.0,   5.0);
 }
 
-// ═══════════════════════════════════════════════════════════
-//  ส่งค่า mock → Firebase
-// ═══════════════════════════════════════════════════════════
 void sendToFirebase() {
   if (!Firebase.ready()) {
     Serial.println("Firebase not ready — skip");
@@ -75,7 +66,6 @@ void sendToFirebase() {
   json.set("node_id",     NODE_ID);
   json.set("timestamp",   (int)millis());
 
-  // ── print ค่าที่จะส่ง ──────────────────────────────────
   Serial.println("─────────────────────────────────────");
   Serial.printf(" [%s] /sensors/%s/latest\n", NODE_ID, NODE_ID);
   Serial.println("─────────────────────────────────────");
@@ -88,27 +78,22 @@ void sendToFirebase() {
   Serial.printf("  timestamp   : %d ms\n",      (int)millis());
   Serial.println("─────────────────────────────────────");
 
-  // ── setJSON → /sensors/{node}/latest ──────────────────
   if (Firebase.RTDB.setJSON(&fbdo, PATH_LATEST, &json)) {
-    Serial.printf("[%s] ✓ latest sent\n", NODE_ID);
+    Serial.printf("[%s] latest sent\n", NODE_ID);
   } else {
-    Serial.printf("[%s] ✗ %s\n", NODE_ID, fbdo.errorReason().c_str());
+    Serial.printf("[%s] %s\n", NODE_ID, fbdo.errorReason().c_str());
   }
 
-  // ── pushJSON → /sensors/{node}/history (ทุก 30 วิ) ───
   if (millis() - lastHistory >= 30000) {
     lastHistory = millis();
     if (Firebase.RTDB.pushJSON(&fbdo, PATH_HISTORY, &json)) {
-      Serial.printf("[%s] ✓ history: %s\n", NODE_ID, fbdo.pushName().c_str());
+      Serial.printf("[%s]  history: %s\n", NODE_ID, fbdo.pushName().c_str());
     } else {
-      Serial.printf("[%s] ✗ history: %s\n", NODE_ID, fbdo.errorReason().c_str());
+      Serial.printf("[%s]  history: %s\n", NODE_ID, fbdo.errorReason().c_str());
     }
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-//  อ่าน /control → รับคำสั่งจาก Dashboard
-// ═══════════════════════════════════════════════════════════
 void pollControl() {
   if (!Firebase.ready()) return;
 
@@ -136,7 +121,6 @@ void pollControl() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════
 void setup() {
   Serial.begin(115200);
   delay(500);
@@ -146,7 +130,6 @@ void setup() {
   Serial.printf( "║  AIRNODE MOCK — NODE: %-10s║\n", NODE_ID);
   Serial.println("╚══════════════════════════════════╝\n");
 
-  // ── WiFi ──────────────────────────────────────────────────
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("WiFi");
@@ -156,7 +139,7 @@ void setup() {
   }
   Serial.printf("\n✓ IP: %s\n", WiFi.localIP().toString().c_str());
 
-  // ── Firebase ──────────────────────────────────────────────
+  //Firebase
   config.database_url               = FIREBASE_HOST;
   config.signer.tokens.legacy_token = FIREBASE_SECRET;
   config.token_status_callback      = tokenStatusCallback;
@@ -178,7 +161,7 @@ void setup() {
   Serial.println("Control   poll ทุก 2 วิ\n");
 }
 
-// ═══════════════════════════════════════════════════════════
+
 void loop() {
   unsigned long now = millis();
 
