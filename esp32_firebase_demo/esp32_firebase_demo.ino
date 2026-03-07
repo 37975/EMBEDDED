@@ -2,6 +2,7 @@
 #include <Firebase_ESP_Client.h>
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
+#include <time.h>
 
 // Config
 #define WIFI_SSID       "WIFI"
@@ -30,6 +31,15 @@ unsigned long lastHistory = 0;
 unsigned long lastControl = 0;
 unsigned long lastCal     = 0;
 
+long long getTimestampMs() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("[NTP] not synced yet — using millis()");
+    return (long long)millis();
+  }
+  time_t now = mktime(&timeinfo);
+  return (long long)now * 1000LL;
+}
 
 void sendSensorData(float pm25, float pm10, float curr) {
   if (!Firebase.ready()) {
@@ -42,10 +52,14 @@ void sendSensorData(float pm25, float pm10, float curr) {
   json.set("pm10",        pm10 + cal.pm10);
   json.set("current",     curr);
   json.set("node_id",     NODE_ID);
-  json.set("timestamp",   (int)millis());
+  json.set("timestamp",   getTimestampMs());
 
   if (Firebase.RTDB.setJSON(&fbdo, PATH_LATEST, &json)) {
-    Serial.printf("[%s] latest sent\n", NODE_ID);
+    struct tm timeinfo;
+    getLocalTime(&timeinfo);
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    Serial.printf("[%s] ✓ sent at %s\n", NODE_ID, buf);
   } else {
     Serial.printf("[%s] %s\n", NODE_ID, fbdo.errorReason().c_str());
   }
@@ -91,25 +105,25 @@ void pollControl() {
   }
 }
 
-void fetchCalibration() {
-  if (!Firebase.ready()) return;
+// void fetchCalibration() {
+//   if (!Firebase.ready()) return;
 
-  FirebaseJson     result;
-  FirebaseJsonData data;
+//   FirebaseJson     result;
+//   FirebaseJsonData data;
 
-  if (!Firebase.RTDB.getJSON(&fbdo, PATH_CALIBRATION, &result)) return;
+//   if (!Firebase.RTDB.getJSON(&fbdo, PATH_CALIBRATION, &result)) return;
 
-  auto getF = [&](const char* key, float& dst) {
-    result.get(data, key);
-    if (data.success) dst = data.floatValue;
-  };
+//   auto getF = [&](const char* key, float& dst) {
+//     result.get(data, key);
+//     if (data.success) dst = data.floatValue;
+//   };
 
-  getF("pm25_offset", cal.pm25);
-  getF("pm10_offset", cal.pm10);
+//   getF("pm25_offset", cal.pm25);
+//   getF("pm10_offset", cal.pm10);
 
-  Serial.printf("[%s] Cal loaded: pm25+%.1f temp+%.1f\n",
-                NODE_ID, cal.pm25);
-}
+//   Serial.printf("[%s] Cal loaded: pm25+%.1f temp+%.1f\n",
+//                 NODE_ID, cal.pm25);
+// }
 
 void setup() {
   Serial.begin(115200);
@@ -127,6 +141,27 @@ void setup() {
     WiFi.localIP().toString().c_str(),
     WiFi.macAddress().c_str());
 
+   // ── NTP sync ────────────────────────────────────────────
+  // configTime(timezone_offset_sec, daylight_offset_sec, ntp_server)
+  // GMT+7 = 7 * 3600 = 25200
+  configTime(25200, 0, "pool.ntp.org", "time.google.com");
+  Serial.print("NTP sync");
+  struct tm timeinfo;
+  {
+    unsigned long t0 = millis();
+    while (!getLocalTime(&timeinfo) && millis() - t0 < 10000) {
+      Serial.print(".");
+      delay(500);
+    }
+    if (getLocalTime(&timeinfo)) {
+      char buf[32];
+      strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+      Serial.printf("\n✓ Time: %s (GMT+7)\n", buf);
+    } else {
+      Serial.println("\n✗ NTP timeout — will retry");
+    }
+  }
+
   // Firebase
   config.database_url               = FIREBASE_HOST;
   config.signer.tokens.legacy_token = FIREBASE_SECRET;
@@ -143,7 +178,7 @@ void setup() {
   }
   Serial.printf("\n%s\n", Firebase.ready() ? "Firebase ready" : "Firebase timeout");
 
-  fetchCalibration();
+  // fetchCalibration();
   pollControl();
 
   Serial.printf("=== RUNNING ===\n\n");
@@ -172,8 +207,8 @@ void loop() {
     pollControl();
   }
 
-  if (now - lastCal >= 60000) {
-    lastCal = now;
-    fetchCalibration();
-  }
+  // if (now - lastCal >= 60000) {
+  //   lastCal = now;
+    // fetchCalibration();
+  // }
 }
