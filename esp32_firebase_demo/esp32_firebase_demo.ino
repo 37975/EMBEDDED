@@ -1,4 +1,5 @@
 #include <WiFi.h>
+#include <MQTT.h>
 #include <Firebase_ESP_Client.h>
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
@@ -12,11 +13,23 @@
 
 #define NODE_ID "indoor" // outdoor
 
+// MQTT
+const char mqtt_broker[]    = "broker.hivemq.com";
+const char mqtt_client_id[] = "airnode_" NODE_ID;
+const int  MQTT_PORT        = 1883;
+
+const char topic_mode[] = "airnode/" NODE_ID "mode";
+// State
+String currentMode = "auto"; // auto | manual | sleep
+
+WiFiClient net;
+MQTTClient mqtt;
+
 // Firebase paths
 #define PATH_LATEST      "/sensors/" NODE_ID "/latest"
 #define PATH_HISTORY     "/sensors/" NODE_ID "/history"
 #define PATH_CONTROL     "/control/" NODE_ID
-#define PATH_CALIBRATION "/calibration/" NODE_ID
+// #define PATH_CALIBRATION "/calibration/" NODE_ID
 
 FirebaseData   fbdo;
 FirebaseAuth   auth;
@@ -28,8 +41,31 @@ struct CalOffsets {
 
 unsigned long lastSend    = 0;
 unsigned long lastHistory = 0;
-unsigned long lastControl = 0;
-unsigned long lastCal     = 0;
+
+void messageReceived(String &topic, String &payload){
+  Serial.printf("[MQTT] mode → %s\n", payload.c_str());
+  if (payload == "auto" || payload == "manual" || payload == "sleep"){
+    currentMode = payload;
+
+    if( currentMode == "auto" ){
+      Serial.printf("MODE : AUTO \n");
+    }else if (currentMode == "manual"){
+      Serial.printf("MODE : MANUAL \n");
+    }else{
+      Serial.printf("MODE : SLEEP \n");
+    }
+  }
+}
+
+void mqttConnect(){
+  Serial.print("MQTT");
+  while(!mqtt.connect(mqtt_client_id)) { 
+    Serial.print("."); 
+    delay(1000); 
+  }
+  mqtt.subscribe(topic_mode);
+  Serial.printf("\n SUBSCRIBED: %s\n", topic_mode);
+}
 
 long long getTimestampMs() {
   struct tm timeinfo;
@@ -71,59 +107,6 @@ void sendSensorData(float pm25, float pm10, float curr) {
     }
   }
 }
-
-void pollControl() {
-  if (!Firebase.ready()) return;
-
-  FirebaseJson     result;
-  FirebaseJsonData data;
-
-  if (!Firebase.RTDB.getJSON(&fbdo, PATH_CONTROL, &result)) return;
-
-  result.get(data, "fan_speed");
-  if (data.success) {
-    int speed = data.intValue;
-    Serial.printf("[%s] fan_speed = %d\n", NODE_ID, speed);
-  }
-
-  // mode
-  result.get(data, "mode");
-  if (data.success) {
-    Serial.printf("[%s] mode = %s\n", NODE_ID, data.stringValue.c_str());
-  }
-
-  result.get(data, "command");
-  if (data.success && data.stringValue.length() > 0) {
-    String cmd = data.stringValue;
-    Serial.printf("[%s] command = %s\n", NODE_ID, cmd.c_str());
-
-    if (cmd == "restart") { delay(500); ESP.restart(); }
-    // if (cmd == "sleep")   { esp_deep_sleep(30 * 1000000ULL); }
-    if (cmd == "sync")    { lastSend = 0; } // force send ทันที
-
-    Firebase.RTDB.setString(&fbdo, String(PATH_CONTROL) + "/command", "");
-  }
-}
-
-// void fetchCalibration() {
-//   if (!Firebase.ready()) return;
-
-//   FirebaseJson     result;
-//   FirebaseJsonData data;
-
-//   if (!Firebase.RTDB.getJSON(&fbdo, PATH_CALIBRATION, &result)) return;
-
-//   auto getF = [&](const char* key, float& dst) {
-//     result.get(data, key);
-//     if (data.success) dst = data.floatValue;
-//   };
-
-//   getF("pm25_offset", cal.pm25);
-//   getF("pm10_offset", cal.pm10);
-
-//   Serial.printf("[%s] Cal loaded: pm25+%.1f temp+%.1f\n",
-//                 NODE_ID, cal.pm25);
-// }
 
 void setup() {
   Serial.begin(115200);
@@ -179,7 +162,9 @@ void setup() {
   Serial.printf("\n%s\n", Firebase.ready() ? "Firebase ready" : "Firebase timeout");
 
   // fetchCalibration();
-  pollControl();
+  mqtt.begin(mqtt_broker, MQTT_PORT, net);
+  mqtt.onMessage(messageReceived);
+  mqttConnect();
 
   Serial.printf("=== RUNNING ===\n\n");
 }
@@ -188,27 +173,21 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
+  mqtt.loop();
+  if(!mqtt.connected()) mqttConnect();
+
+  if(currentMode == "auto"){
+    printf(currentMode.c_str());
+  }
+
   if (now - lastSend >= 5000) {
     lastSend = now;
 
     //ให้แก้รับค่าจาก sensor
     float pm25 = 35.2;
     float pm10 = 72.4;
-    // float temp = 28.5;
-    // float hum  = 65.0;
-    // float pres = 1010.2;
     float curr = 1.24;
 
     sendSensorData(pm25, pm10, curr);
   }
-
-  if (now - lastControl >= 2000) {
-    lastControl = now;
-    pollControl();
-  }
-
-  // if (now - lastCal >= 60000) {
-  //   lastCal = now;
-    // fetchCalibration();
-  // }
 }
