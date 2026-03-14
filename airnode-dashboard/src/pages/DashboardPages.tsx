@@ -52,7 +52,7 @@ export function DashboardPage() {
             {aqi.label}
           </span>
           <span style={{ color: aqi.color + "99", fontSize: 11 }}>
-            PM2.5 = {data.pm25.toFixed(1)} µg/m³
+            PM2.5 = {data.pm25?.toFixed(1) ?? "N/A"} µg/m³
           </span>
         </div>
       )}
@@ -74,9 +74,9 @@ export function DashboardPage() {
           ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
               {[
-                { label: "PM2.5",   value: data.pm25.toFixed(1),    unit: "µg/m³", color: "#f43f5e" },
-                { label: "PM10",    value: data.pm10.toFixed(1),    unit: "µg/m³", color: "#fb923c" },
-                { label: "Current", value: data.current.toFixed(2), unit: "A",     color: "#4ade80" },
+                { label: "PM2.5",   value: data.pm25?.toFixed(1) ?? "N/A",    unit: "µg/m³", color: "#f43f5e" },
+                { label: "PM10",    value: data.pm10?.toFixed(1) ?? "N/A",    unit: "µg/m³", color: "#fb923c" },
+                { label: "Current", value: data.current?.toFixed(2) ?? "N/A", unit: "A",     color: "#4ade80" },
               ].map(({ label, value, unit, color }) => (
                 <div key={label} style={{
                   background: "#0f172a", borderRadius: 10,
